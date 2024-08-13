@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 )
 
 // Greeting represents a simple structure for a greeting message
@@ -16,6 +17,11 @@ type Greeting struct {
 	Message   string `json:"message"`
 }
 
+// Store greetings in a global slice
+var greetings []Greeting
+var mu sync.Mutex // to protect concurrent access to the greetings slice
+
+// holds data that will be passed to HTML
 type PageData struct {
 	Title      string
 	JavaScript template.JS
@@ -23,9 +29,6 @@ type PageData struct {
 }
 
 func main() {
-
-	age := 30
-	fmt.Print("test hello world ", age)
 
 	// Serve static files from the "static" directory
 	//http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
@@ -86,7 +89,7 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		pageData := PageData{
 			Title:      "Go Generated Page",
-			JavaScript: template.JS(jsData),
+			JavaScript: template.JS(jsData), // javascript code that is inluded
 		}
 		if err := tmpl.Execute(w, pageData); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -95,7 +98,10 @@ func main() {
 
 	// Handle the /greet route
 	http.HandleFunc("/greet", func(w http.ResponseWriter, r *http.Request) {
+		// checks if request method is POST
 		if r.Method == http.MethodPost {
+
+			//
 			firstName := r.FormValue("first_name")
 			lastName := r.FormValue("last_name")
 
@@ -105,6 +111,18 @@ func main() {
 			}
 
 			message := fmt.Sprintf("Thank you, %s %s! Your greeting has been recorded.", firstName, lastName)
+
+			// Add the new greeting to the global greetings slice
+			mu.Lock()
+
+			// appends new elemt to greetings slice
+			// creates greeting struct
+			greetings = append(greetings, Greeting{
+				FirstName: firstName, // assign vale firstName to value FirstName
+				LastName:  lastName,
+				Message:   fmt.Sprintf("Hello, %s %s!", firstName, lastName),
+			})
+			mu.Unlock()
 
 			pageData := PageData{
 				Title:      "Go Generated Page",
@@ -123,19 +141,15 @@ func main() {
 	// Handle the /greetings route to return a list of greetings as JSON
 	http.HandleFunc("/greetings", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			// Sample data - in a real application, this could come from a database
-			greetings := []Greeting{
-				{"John", "Doe", "Hello, John Doe!"},
-				{"Jane", "Doe", "Hello, Jane Doe!"},
-			}
-
 			// Set the Content-Type header to application/json
 			w.Header().Set("Content-Type", "application/json")
 
 			// Encode the greetings data as JSON and send it as the response
+			mu.Lock()
 			if err := json.NewEncoder(w).Encode(greetings); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
+			mu.Unlock() // prevents goroutines from modifying greetings
 		} else {
 			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		}
