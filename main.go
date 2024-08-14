@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 )
 
 // Greeting represents a simple structure for a greeting message
@@ -15,6 +16,7 @@ type Greeting struct {
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 	Message   string `json:"message"`
+	Timestamp string `json:"timestamp"`
 }
 
 // Store greetings in a global slice
@@ -37,7 +39,9 @@ func main() {
 	// Read the compiled JavaScript code
 	jsData, err := os.ReadFile("main.js")
 	if err != nil {
+		log.Printf("Failed to read javascript file")
 		log.Fatalf("Failed to read JavaScript file: %v", err)
+
 	}
 
 	// Define the HTML template
@@ -51,7 +55,7 @@ func main() {
     <link rel="stylesheet" type="text/css" href="/static/styles.css"> <!-- Example static CSS file -->
 </head>
 <body>
-    <h1>Check the console for the greeting!</h1>
+    <h1>Greetings page!</h1>
     <form action="/greet" method="POST">
          <input type="text" name="first_name" placeholder="Enter your first name">
          <input type="text" name="last_name" placeholder="Enter your last name">
@@ -73,7 +77,7 @@ func main() {
                 const greetingList = document.getElementById('greetingList');
                 data.forEach(greeting => {
                     const li = document.createElement('li');
-                    li.textContent = greeting.first_name + " " + greeting.last_name + ": " + greeting.message;
+                    li.textContent = greeting.first_name + " " + greeting.last_name + ": " + greeting.message + ": " + greeting.timestamp;
                     greetingList.appendChild(li);
                 });
             })
@@ -86,11 +90,14 @@ func main() {
     `))
 
 	// Handle the root path and render the template
+	// "/" finds the root of the web server
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		pageData := PageData{
 			Title:      "Go Generated Page",
 			JavaScript: template.JS(jsData), // javascript code that is inluded
 		}
+
+		// tmpl.Execute(w, pageData) renders HTML page from the info stored in pageData
 		if err := tmpl.Execute(w, pageData); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -106,6 +113,7 @@ func main() {
 			lastName := r.FormValue("last_name")
 
 			if firstName == "" || lastName == "" {
+				log.Printf("Validation error missing first and lastnames")
 				http.Error(w, "First and last names are required", http.StatusBadRequest)
 				return
 			}
@@ -121,6 +129,7 @@ func main() {
 				FirstName: firstName, // assign vale firstName to value FirstName
 				LastName:  lastName,
 				Message:   fmt.Sprintf("Hello, %s %s!", firstName, lastName),
+				Timestamp: time.Now().Format("2006-01-02 15:04:05"),
 			})
 			mu.Unlock()
 
