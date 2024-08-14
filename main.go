@@ -44,50 +44,11 @@ func main() {
 
 	}
 
-	// Define the HTML template
-	tmpl := template.Must(template.New("index").Parse(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{.Title}}</title>
-    <link rel="stylesheet" type="text/css" href="/static/styles.css"> <!-- Example static CSS file -->
-</head>
-<body>
-    <h1>Greetings page!</h1>
-    <form action="/greet" method="POST">
-         <input type="text" name="first_name" placeholder="Enter your first name">
-         <input type="text" name="last_name" placeholder="Enter your last name">
-        <button type="submit">Greet Me</button>
-    </form>
-
-    {{if .Message}}
-    <p>{{.Message}}</p>
-    {{end}}
-
-    <h2>Greeting List:</h2>
-    <ul id="greetingList"></ul>
-
-    <script>
-        // Fetch the greetings from the backend and display them
-        fetch('/greetings')
-            .then(response => response.json())
-            .then(data => {
-                const greetingList = document.getElementById('greetingList');
-                data.forEach(greeting => {
-                    const li = document.createElement('li');
-                    li.textContent = greeting.first_name + " " + greeting.last_name + ": " + greeting.message + ": " + greeting.timestamp;
-                    greetingList.appendChild(li);
-                });
-            })
-            .catch(error => console.error('Error fetching greetings:', error));
-
-        {{.JavaScript}}
-    </script>
-</body>
-</html>
-    `))
+	// Load the HTML template from an external file
+	tmpl, err := template.ParseFiles("template.html")
+	if err != nil {
+		log.Fatalf("Failed to parse template file: %v", err)
+	}
 
 	// Handle the root path and render the template
 	// "/" finds the root of the web server
