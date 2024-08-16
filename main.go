@@ -125,6 +125,19 @@ func main() {
 		}
 	})
 
+	// Handle the /clear route to clear the greetings log
+	http.HandleFunc("/clear", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			mu.Lock()
+			greetings = []Greeting{} // Clear the log
+			// greetings is a slice of Greetings
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		} else {
+			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		}
+	})
+
 	// Start the HTTP server
 	log.Println("Server is running on http://localhost:8080")
 	if err := http.ListenAndServe(":8080", nil); err != nil {

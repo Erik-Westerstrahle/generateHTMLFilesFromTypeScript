@@ -14,6 +14,7 @@
         <input type="text" name="first_name" placeholder="Enter your first name">
         <input type="text" name="last_name" placeholder="Enter your last name">
         <button type="submit">Greet Me</button>
+     
     </form>
 
     {{if .Message}}
@@ -22,6 +23,7 @@
 
     <h2>Greeting List:</h2>
     <ul id="greetingList"></ul>
+    <button id="clearLogButton">Clear Log</button> 
 
     <script>
         fetch('/greetings')
@@ -37,6 +39,19 @@
             .catch(error => console.error('Error fetching greetings:', error));
 
         {{.JavaScript}}
-    </script>
+
+// Clear Log functionality
+document.getElementById('clearLogButton').addEventListener('click', function() {
+    fetch('/clear', { method: 'POST' })
+        .then(response => {
+            if (response.ok) {
+                document.getElementById('greetingList').innerHTML = ''; // Clear the list in the UI
+            } else {
+                alert('Failed to clear log');
+            }
+        })
+        .catch(error => console.error('Error clearing log:', error));
+});
+</script>
 </body>
 </html>
