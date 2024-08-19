@@ -24,16 +24,18 @@ type Greeting struct {
 
 // Store greetings in a global slice
 var greetings []Greeting
-var db *sql.DB
+var dataBase *sql.DB
 var mu sync.Mutex // to protect concurrent access to the greetings slice
 
 func initDatabase() {
+	log.Println("initializing database ")
 	var err error
-	db, err = sql.Open("sqlite3", "./greetings.db")
+	dataBase, err = sql.Open("sqlite3", "./greetings.dataBase")
 	if err != nil {
 		log.Fatalf("error could not open database: %v", err)
 	}
 
+	// create table greetings if it does not exist
 	query := `
 CREATE TABLE IF NOT EXISTS greetings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,8 +44,9 @@ CREATE TABLE IF NOT EXISTS greetings (
     message TEXT,
     timestamp TEXT
 )`
+	log.Println("table does not exist. Creating table")
 
-	_, err = db.Exec(query)
+	_, err = dataBase.Exec(query)
 	if err != nil {
 		log.Fatalf("Failed to create table: %v", err)
 	}
@@ -59,10 +62,9 @@ type PageData struct {
 func main() {
 
 	initDatabase()
-	defer db.Close()
+	defer dataBase.Close() // ensures data base is closed when main is running
 
 	// Serve static files from the "static" directory
-	//http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 
 	// Read the compiled JavaScript code
@@ -72,16 +74,20 @@ func main() {
 		log.Fatalf("Failed to read JavaScript file: %v", err)
 
 	}
+	log.Println(" loaded Javascript file")
 
 	// Load the HTML template from an external file
 	tmpl, err := template.ParseFiles("template.html")
 	if err != nil {
 		log.Fatalf("Failed to parse template file: %v", err)
 	}
+	log.Println("Loaded HTML template")
 
 	// Handle the root path and render the template
 	// "/" finds the root of the web server
+	// w http.ResponseWriter writes to the server
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Serving root path request...")
 		pageData := PageData{
 			Title:      "Go Generated Page",
 			JavaScript: template.JS(jsData), // javascript code that is inluded
@@ -89,18 +95,22 @@ func main() {
 
 		// tmpl.Execute(w, pageData) renders HTML page from the info stored in pageData
 		if err := tmpl.Execute(w, pageData); err != nil {
+			log.Printf("Failed to execute template: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})
 
 	// Handle the /greet route
 	http.HandleFunc("/greet", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Handling /greet request...")
 		// checks if request method is POST
 		if r.Method == http.MethodPost {
 
-			//
+			// writes the first and lastname to the database file
 			firstName := r.FormValue("first_name")
 			lastName := r.FormValue("last_name")
+
+			log.Printf("Received firstName: %s, lastName: %s", firstName, lastName) // Debug message
 
 			if firstName == "" || lastName == "" {
 				log.Printf("Validation error missing first and lastnames")
@@ -112,22 +122,16 @@ func main() {
 
 			timestamp := time.Now().Format("2006-01-02 15:04:05")
 			// Add the new greeting to the global greetings slice
+
+			// mu.Lock() is used to ensure that only go routine can access the database at once
 			mu.Lock()
+			log.Println("Inserting greeting into database...")
+			_, err := dataBase.Exec("INSERT INTO greetings (first_name, last_name, message, timestamp) VALUES (?, ?, ?, ?)", firstName, lastName, message, timestamp)
 
-			_, err := db.Exec("INSERT INTO greetings (first_name, last_name, message, timestamp) VALUES (?, ?, ?, ?)", firstName, lastName, message, timestamp)
-
-			// appends new elemt to greetings slice
-			// creates greeting struct
-			/* 	greetings = append(greetings, Greeting{
-				FirstName: firstName, // assign vale firstName to value FirstName
-				LastName:  lastName,
-				Message:   fmt.Sprintf("Hello, %s %s!", firstName, lastName),
-				Timestamp: time.Now().Format("2006-01-02 15:04:05"),
-			}) */
-
-			mu.Unlock()
+			mu.Unlock() // unlocks the database
 
 			if err != nil {
+				log.Printf("Failed to insert greeting: %v", err)
 				http.Error(w, "Error could not save greeting", http.StatusInternalServerError)
 				return
 			}
@@ -139,7 +143,10 @@ func main() {
 			}
 
 			if err := tmpl.Execute(w, pageData); err != nil {
+				log.Printf("Failed to execute template: %v", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
+			} else {
+				log.Println("Greeting processed and response sent successfully.") // Debug message
 			}
 		} else {
 			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
@@ -148,23 +155,12 @@ func main() {
 
 	// Handle the /greetings route to return a list of greetings as JSON
 	http.HandleFunc("/greetings", func(w http.ResponseWriter, r *http.Request) {
-		/* 		if r.Method == http.MethodGet {
-		   			// Set the Content-Type header to application/json
-		   			w.Header().Set("Content-Type", "application/json")
-
-		   			// Encode the greetings data as JSON and send it as the response
-		   			mu.Lock()
-		   			if err := json.NewEncoder(w).Encode(greetings); err != nil {
-		   				http.Error(w, err.Error(), http.StatusInternalServerError)
-		   			}
-		   			mu.Unlock() // prevents goroutines from modifying greetings
-		   		} else {
-		   			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-		   		} */
+		log.Println("Handling /greetings request...")
 
 		if r.Method == http.MethodGet {
-			rows, err := db.Query("SELECT first_name, last_name, message, timestamp FROM greetings")
+			rows, err := dataBase.Query("SELECT first_name, last_name, message, timestamp FROM greetings")
 			if err != nil {
+				log.Printf("Failed to fetch greetings: %v", err)
 				http.Error(w, "Failed to fetch greetings", http.StatusInternalServerError)
 				return
 			}
@@ -185,6 +181,7 @@ func main() {
 				http.Error(w, "Failed to encode JSON", http.StatusInternalServerError)
 			}
 		} else {
+			log.Println("Invalid request method for /greetings")
 			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		}
 
@@ -192,25 +189,21 @@ func main() {
 
 	// Handle the /clear route to clear the greetings log
 	http.HandleFunc("/clear", func(w http.ResponseWriter, r *http.Request) {
-		/* 	if r.Method == http.MethodPost {
-			mu.Lock()
-			greetings = []Greeting{} // Clear the log
-			// greetings is a slice of Greetings
-			mu.Unlock()
-			w.WriteHeader(http.StatusOK)
-		} else {
-			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-		} */
+		log.Println("Handling /clear request...")
+		// checks if the HTTP method is a post
 		if r.Method == http.MethodPost {
 			mu.Lock()
-			_, err := db.Exec("DELETE FROM greetings")
+			_, err := dataBase.Exec("DELETE FROM greetings")
 			mu.Unlock()
 			if err != nil {
+				log.Printf("Failed to clear log: %v", err)
 				http.Error(w, "Failed to clear log", http.StatusInternalServerError)
 				return
 			}
 			w.WriteHeader(http.StatusOK)
+			log.Println("Greetings log cleared successfully.")
 		} else {
+			log.Println("Invalid request method for /clear")
 			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		}
 	})
