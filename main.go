@@ -136,6 +136,7 @@ func main() {
 				return
 			}
 
+			// creates a nw instance of pagedata struct
 			pageData := PageData{
 				Title:      "Go Generated Page",
 				JavaScript: template.JS(jsData),
