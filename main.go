@@ -112,6 +112,7 @@ func main() {
 
 			log.Printf("Received firstName: %s, lastName: %s", firstName, lastName) // Debug message
 
+			// error if names are null
 			if firstName == "" || lastName == "" {
 				log.Printf("Validation error missing first and lastnames")
 				http.Error(w, "First and last names are required", http.StatusBadRequest)
