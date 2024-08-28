@@ -21,6 +21,15 @@
     <p>{{.Message}}</p>
     {{end}}
 
+    <h2>Search for a Greeting</h2>
+    <form action="/search" method="GET">
+        <input type="text" name="first_name" placeholder="Enter first name to search">
+        <input type="text" name="last_name" placeholder="Enter last name to search">
+        <button type="submit">Search</button>
+    </form>
+
+
+
     <h2>Greeting List:</h2>
     <ul id="greetingList"></ul>
     <button id="clearLogButton">Clear Log</button> 

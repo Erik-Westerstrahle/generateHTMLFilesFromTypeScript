@@ -137,7 +137,7 @@ func main() {
 				return
 			}
 
-			// creates a nw instance of pagedata struct
+			// creates a new instance of pagedata struct
 			pageData := PageData{
 				Title:      "Go Generated Page",
 				JavaScript: template.JS(jsData),
@@ -168,7 +168,7 @@ func main() {
 			}
 			defer rows.Close()
 
-			var greetings []Greeting
+			var greetings []Greeting //This is a slice
 			for rows.Next() {
 				var greeting Greeting
 				if err := rows.Scan(&greeting.FirstName, &greeting.LastName, &greeting.Message, &greeting.Timestamp); err != nil {
@@ -183,8 +183,7 @@ func main() {
 				http.Error(w, "Failed to encode JSON", http.StatusInternalServerError)
 			}
 		} else {
-			log.Println("Invalid request method for /greetings")
-			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+
 		}
 
 	})
@@ -195,18 +194,66 @@ func main() {
 		// checks if the HTTP method is a post
 		if r.Method == http.MethodPost {
 			mu.Lock()
-			_, err := dataBase.Exec("DELETE FROM greetings")
+			_, err := dataBase.Exec("DELETE FROM greetings") // this executes an SQL delete
 			mu.Unlock()
 			if err != nil {
-				log.Printf("Failed to clear log: %v", err)
-				http.Error(w, "Failed to clear log", http.StatusInternalServerError)
+				log.Printf("Failed  clear log: %v", err)
+				http.Error(w, "Failed  clear log", http.StatusInternalServerError)
 				return
 			}
 			w.WriteHeader(http.StatusOK)
 			log.Println("Greetings log cleared successfully.")
 		} else {
-			log.Println("Invalid request method for /clear")
-			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+
+		}
+	})
+
+	// Handle the /search route to search for a specific greeting by first and last name
+	// "/search" will cause errors
+	http.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Handling /search request...")
+
+		if r.Method == http.MethodGet {
+			//Finds the name trough the URL
+			// r.URL acceses the URL field
+			firstName := r.URL.Query().Get("first_name")
+			lastName := r.URL.Query().Get("last_name")
+
+			log.Printf("Searching for firstName and %s, lastName: %s", firstName, lastName) // Debug message
+
+			if firstName == "" || lastName == "" {
+				log.Println("Missing first name or last name for search")
+				http.Error(w, "First and last names needs to be in search fields", http.StatusBadRequest)
+				return
+			}
+
+			mu.Lock() // lock keeps the database from being changes
+			row := dataBase.QueryRow("SELECT first_name, last_name, message, timestamp FROM greetings WHERE first_name = ? AND last_name = ?", firstName, lastName)
+			// (SELECT first_name, last_name, message, timestamp) This selects the columns  first_name last_name, message and timestamp columns from the database
+			// ? is a placeholder for the data that will be retrevied
+
+			mu.Unlock()
+
+			var greeting Greeting
+			// & gets the memory adress of a variable
+			err := row.Scan(&greeting.FirstName, &greeting.LastName, &greeting.Message, &greeting.Timestamp) // passes the memory adress where the variable is stored
+			if err == sql.ErrNoRows {
+				log.Printf("No greeting found for %s %s in the database", firstName, lastName)
+
+				return
+			} else if err != nil {
+
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json") // encodes the greeting struct into JSON format
+			// json.NewEncoder(w) creates JSON encoder that writes w to http.ResponseWriter
+			if err := json.NewEncoder(w).Encode(greeting); err != nil {
+				log.Printf("Failed to encode JSON: %v", err)
+
+			}
+		} else {
+
 		}
 	})
 
