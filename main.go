@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,10 +23,10 @@ type Greeting struct {
 	Timestamp string `json:"timestamp"`
 }
 
-// Store greetings in a global slice
-var greetings []Greeting
-var dataBase *sql.DB
-var mu sync.Mutex // to protect concurrent access to the greetings slice
+// global variables
+var greetings []Greeting // this slice store greetings messages
+var dataBase *sql.DB     // this connects to database
+var mu sync.Mutex        // to protect concurrent access to the greetings slice
 
 func initDatabase() {
 	log.Println("initializing database ")
@@ -67,7 +68,7 @@ func main() {
 	// Serve static files from the "static" directory
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 
-	// Read the compiled JavaScript code
+	// Read the compiled JavaScript code from a file
 	jsData, err := os.ReadFile("main.js")
 	if err != nil {
 		log.Printf("Failed to read javascript file")
@@ -119,6 +120,7 @@ func main() {
 				return
 			}
 
+			// message to comfirm that the grreting was recorded
 			message := fmt.Sprintf("Thank you, %s %s! Your greeting has been recorded.", firstName, lastName)
 
 			timestamp := time.Now().Format("2006-01-02 15:04:05")
@@ -137,7 +139,7 @@ func main() {
 				return
 			}
 
-			// creates a new instance of pagedata struct
+			// creates a new instance of pagedata struct to pass the template to
 			pageData := PageData{
 				Title:      "Go Generated Page",
 				JavaScript: template.JS(jsData),
@@ -166,7 +168,7 @@ func main() {
 				http.Error(w, "Failed to fetch greetings", http.StatusInternalServerError)
 				return
 			}
-			defer rows.Close()
+			defer rows.Close() // closes rows after it has been read
 
 			var greetings []Greeting //This is a slice
 			for rows.Next() {
@@ -178,7 +180,7 @@ func main() {
 				greetings = append(greetings, greeting)
 			}
 
-			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Type", "application/json") // sets response content to JSON
 			if err := json.NewEncoder(w).Encode(greetings); err != nil {
 				http.Error(w, "Failed to encode JSON", http.StatusInternalServerError)
 			}
@@ -213,48 +215,116 @@ func main() {
 	http.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
 		log.Println("Handling /search request...")
 
-		if r.Method == http.MethodGet {
-			//Finds the name trough the URL
-			// r.URL acceses the URL field
-			firstName := r.URL.Query().Get("first_name")
-			lastName := r.URL.Query().Get("last_name")
-
-			log.Printf("Searching for firstName and %s, lastName: %s", firstName, lastName) // Debug message
-
-			if firstName == "" || lastName == "" {
-				log.Println("Missing first name or last name for search")
-				http.Error(w, "First and last names needs to be in search fields", http.StatusBadRequest)
-				return
-			}
-
-			mu.Lock() // lock keeps the database from being changes
-			row := dataBase.QueryRow("SELECT first_name, last_name, message, timestamp FROM greetings WHERE first_name = ? AND last_name = ?", firstName, lastName)
-			// (SELECT first_name, last_name, message, timestamp) This selects the columns  first_name last_name, message and timestamp columns from the database
-			// ? is a placeholder for the data that will be retrevied
-
-			mu.Unlock()
-
-			var greeting Greeting
-			// & gets the memory adress of a variable
-			err := row.Scan(&greeting.FirstName, &greeting.LastName, &greeting.Message, &greeting.Timestamp) // passes the memory adress where the variable is stored
-			if err == sql.ErrNoRows {
-				log.Printf("No greeting found for %s %s in the database", firstName, lastName)
-
-				return
-			} else if err != nil {
-
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json") // encodes the greeting struct into JSON format
-			// json.NewEncoder(w) creates JSON encoder that writes w to http.ResponseWriter
-			if err := json.NewEncoder(w).Encode(greeting); err != nil {
-				log.Printf("Failed to encode JSON: %v", err)
-
-			}
-		} else {
-
+		if r.Method != http.MethodGet {
+			log.Println("Invalid request method for /search")
+			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+			return
 		}
+
+		// gets the parameters from URL query string
+		firstName := r.URL.Query().Get("first_name")
+		lastName := r.URL.Query().Get("last_name")
+		startDateStr := r.URL.Query().Get("start_date")
+		endDateStr := r.URL.Query().Get("end_date")
+		log.Printf("Searching for firstName and %s, lastName: %s, StartDate: %s, EndDate: %s", firstName, lastName, startDateStr, endDateStr) // Debug message
+
+		// initialize start and end dates variables
+		var startDate, endDate time.Time
+		var err error
+
+		// parse date
+		// Parse start_date if provided
+		if startDateStr != "" {
+			startDate, err = time.Parse("2006-01-02", startDateStr)
+			if err != nil {
+				log.Printf("Invalid start_date format: %v", err)
+				http.Error(w, "Invalid start_date format. Use YYYY-MM-DD.", http.StatusBadRequest)
+				return
+			}
+		}
+
+		// Parse end_date if provided
+		if endDateStr != "" {
+			endDate, err = time.Parse("2006-01-02", endDateStr)
+			if err != nil {
+				log.Printf("Invalid end_date format: %v", err)
+				http.Error(w, "Invalid end_date format. Use YYYY-MM-DD.", http.StatusBadRequest)
+				return
+			}
+		}
+
+		// SQL query built here
+		query := "SELECT first_name, last_name, message, timestamp FROM greetings"
+		var queryParams []interface{}
+		var conditions []string
+
+		// conditions based on parameters
+		if firstName != "" {
+			conditions = append(conditions, "first_name = ?") // querys SQL and appends first_name to conditions slice
+			queryParams = append(queryParams, firstName)
+		}
+
+		if lastName != "" {
+			conditions = append(conditions, "last_name = ?")
+			queryParams = append(queryParams, lastName)
+		}
+
+		if !startDate.IsZero() {
+			conditions = append(conditions, "DATE(timestamp) >= ?")
+			queryParams = append(queryParams, startDate.Format("2006-01-02"))
+		}
+
+		if !endDate.IsZero() {
+			conditions = append(conditions, "DATE(timestamp) <= ?")
+			queryParams = append(queryParams, endDate.Format("2006-01-02"))
+		}
+
+		if len(conditions) > 0 {
+			query += " WHERE " + strings.Join(conditions, " AND ")
+		}
+
+		// Execute the query
+		mu.Lock()
+		rows, err := dataBase.Query(query, queryParams...) // querys the database and places it in rows and also used for err
+		mu.Unlock()
+		if err != nil {
+			log.Printf("Database query failed: %v", err)
+			http.Error(w, "Database query failed", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		// Collect results
+		var results []Greeting
+		for rows.Next() {
+			var g Greeting
+			err := rows.Scan(&g.FirstName, &g.LastName, &g.Message, &g.Timestamp)
+			if err != nil {
+				log.Printf("Failed to scan row: %v", err)
+				http.Error(w, "Failed to process results", http.StatusInternalServerError)
+				return
+			}
+			results = append(results, g) // appends the scanned greeting to the slice results
+		}
+
+		// Check for errors after iteration
+		if err = rows.Err(); err != nil {
+			log.Printf("Error iterating over rows: %v", err)
+			http.Error(w, "Error processing results", http.StatusInternalServerError)
+			return
+		}
+
+		// Return results as JSON
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK) // this sends status code success
+		err = json.NewEncoder(w).Encode(results)
+		if err != nil {
+			log.Printf("Failed to encode results to JSON: %v", err)
+			http.Error(w, "Failed to encode results", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("Search successful, returned %d results.", len(results)) // this logs the amount results
 	})
 
 	// Start the HTTP server
